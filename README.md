@@ -39,7 +39,7 @@ That's the whole system. Everything on screen is derived, fresh, every time.
 ## Run your own (ノ^_^)ノ
 
 You need free-tier accounts at [Supabase](https://supabase.com) and
-[Vercel](https://vercel.com), plus an Anthropic API key for the Ask box
+[Netlify](https://netlify.com), plus an Anthropic API key for the Ask box
 ([docs.claude.com/en/api/overview](https://docs.claude.com/en/api/overview)).
 
 1. **Supabase**: create a project → SQL Editor → run `supabase/schema.sql`
@@ -54,8 +54,9 @@ You need free-tier accounts at [Supabase](https://supabase.com) and
    cp .env.example .env.local   # paste your Supabase URL, anon key, Anthropic key
    npm run dev
    ```
-4. **Deploy**: push to GitHub → import on Vercel → add the same three env
-   vars → set the Vercel URL as your Site URL in Supabase auth settings
+4. **Deploy**: push to GitHub → import on Netlify (it detects Next.js
+   automatically) → add the same three env vars → set the Netlify URL as
+   your Site URL in Supabase auth settings
 5. On your phone: open the URL → **Add to Home Screen**
 
 First sign-in seeds a full example household. From that moment the goals are
