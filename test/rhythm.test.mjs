@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  addDays, daysBetween, dueOn, runMiles, computeDay, blockForTime,
+  addDays, daysBetween, dueOn, runMiles, computeDay, blockForTime, restartPlan,
   RACE_DATE,
 } from "../lib/rhythm.js";
 
@@ -205,4 +205,96 @@ test("blockForTime: late night belongs to evening, not early morning", () => {
   assert.equal(blockForTime("23:30"), "evening");
   assert.equal(blockForTime("02:00"), "evening");
   assert.equal(blockForTime("04:00"), "early");
+});
+
+/* ---------- restart (deferredTo + restartPlan) ---------- */
+
+const gid = (id, rule, extra = {}) => ({ id, title: id, rule, ...extra });
+
+test("deferredTo: not due before the date, overdue counts from it after", () => {
+  // Wednesday 07-08's cycle is open; restart pushes it to Friday 07-10.
+  const g = goal({ type: "weekly", days: ["WE"] }, { deferredTo: "2026-07-10" });
+  assert.equal(dueOn(g, [], "2026-07-09").due, false);
+  const d = dueOn(g, [], "2026-07-10");
+  assert.equal(d.due, true);
+  assert.equal(d.overdueDays, 0, "fresh start: overdue counts from deferredTo");
+  assert.equal(dueOn(g, [], "2026-07-12").overdueDays, 2);
+});
+
+test("deferredTo: a weekly item returns to its normal cycle after completion", () => {
+  const g = goal({ type: "weekly", days: ["WE"] }, { deferredTo: "2026-07-14" });
+  const comps = [done("2026-07-14")];
+  assert.equal(dueOn(g, comps, "2026-07-15").due, false);
+  assert.equal(dueOn(g, comps, "2026-07-22").due, true, "next Wednesday");
+});
+
+test("deferredTo: an interval item counts from the completion as usual", () => {
+  const g = goal({ type: "interval", everyN: 7, from: "2026-06-01" }, { deferredTo: "2026-07-14" });
+  const comps = [done("2026-07-14")];
+  assert.equal(dueOn(g, comps, "2026-07-20").due, false);
+  assert.equal(dueOn(g, comps, "2026-07-21").due, true);
+});
+
+test("deferredTo: earlier dates still show the original overdue state", () => {
+  const g = goal({ type: "interval", everyN: 7, from: "2026-07-01" });
+  const deferred = { ...g, deferredTo: "2026-07-14" };
+  assert.equal(dueOn(deferred, [], "2026-07-10").due, false, "deferral hides it before the date");
+  assert.equal(dueOn(g, [], "2026-07-10").overdueDays, 9, "without it, overdue as before");
+});
+
+test("restartPlan: only overdue interval/weekly/monthly goals qualify", () => {
+  const today = "2026-07-10";
+  const goals = [
+    gid("over", { type: "interval", everyN: 7, from: "2026-07-01" }),
+    gid("fresh", { type: "interval", everyN: 7, from: "2026-07-10" }), // 0 days over
+    gid("daily", { type: "daily" }),
+    gid("alt", { type: "alternate", anchor: "2026-07-10" }),
+    gid("wk", { type: "weekdays", days: ["FR"] }),
+    gid("paused", { type: "interval", everyN: 7, from: "2026-07-01" }, { pausedUntil: "2026-08-01" }),
+  ];
+  assert.deepEqual(restartPlan(goals, [], today).map((p) => p.id), ["over"]);
+});
+
+test("restartPlan: stalest first, capped per day, oversized gets its own day", () => {
+  const today = "2026-07-10";
+  const mk = (id, from, minutes) => gid(id, { type: "interval", everyN: 7, from }, { minutes });
+  const goals = [
+    mk("a", "2026-06-01", 60),  // stalest
+    mk("b", "2026-06-15", 60),
+    mk("c", "2026-07-01", 20),
+    mk("big", "2026-07-05", 120), // over the 90 cap
+  ];
+  const plan = Object.fromEntries(restartPlan(goals, [], today).map((p) => [p.id, p.deferredTo]));
+  assert.equal(plan.a, "2026-07-10");
+  assert.equal(plan.b, "2026-07-11", "60+60 > 90 → next day");
+  assert.equal(plan.c, "2026-07-10", "60+20 fits under the cap");
+  assert.equal(plan.big, "2026-07-12", "needs a day with nothing else");
+});
+
+test("restartPlan: untimed items count as 15 min, always-on rules don't use the budget", () => {
+  const today = "2026-07-10";
+  const goals = [
+    gid("daily", { type: "daily" }, { minutes: 200 }),
+    ...Array.from({ length: 7 }, (_, i) =>
+      gid("t" + i, { type: "interval", everyN: 7, from: "2026-06-01" })),
+  ];
+  const plan = restartPlan(goals, [], today);
+  assert.equal(plan.filter((p) => p.deferredTo === today).length, 6, "6 × 15 = 90");
+  assert.equal(plan.filter((p) => p.deferredTo === "2026-07-11").length, 1);
+});
+
+test("restartPlan: after applying, nothing is overdue and nothing is lost", () => {
+  const today = "2026-07-10";
+  const goals = [
+    gid("a", { type: "interval", everyN: 7, from: "2026-06-01" }, { minutes: 60 }),
+    gid("b", { type: "weekly", days: ["MO"] }, { minutes: 60 }),
+  ];
+  const applied = goals.map((g) => ({
+    ...g, deferredTo: restartPlan(goals, [], today).find((p) => p.id === g.id).deferredTo,
+  }));
+  assert.equal(restartPlan(applied, [], today).length, 0, "idempotent");
+  for (const g of applied) {
+    assert.equal(dueOn(g, [], addDays(today, 3)).due, true, "still on the stack");
+    assert.equal(dueOn(g, [], g.deferredTo).overdueDays, 0);
+  }
 });

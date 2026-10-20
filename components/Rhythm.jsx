@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import {
   BLOCKS, RACE_DATE, RACE_NAME, DOW,
   addDays, daysBetween, effectiveToday, prettyDate, shortDate, nowHM,
-  computeDay, blockForTime, ruleLabel,
+  computeDay, blockForTime, ruleLabel, restartPlan,
 } from "../lib/rhythm";
 import * as store from "../lib/store";
 
@@ -16,6 +16,8 @@ export default function Rhythm({ onSignOut }) {
   const [answer, setAnswer] = useState(null);
   const [asking, setAsking] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const [undo, setUndo] = useState(null); // {count, prev: [goal, ...]}
 
   useEffect(() => {
     store
@@ -28,6 +30,12 @@ export default function Rhythm({ onSignOut }) {
     const t = setInterval(() => setToday(effectiveToday()), 60000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 8000);
+    return () => clearTimeout(t);
+  }, [undo]);
 
   if (loadError)
     return (
@@ -55,6 +63,24 @@ export default function Rhythm({ onSignOut }) {
       setComps([...comps, c]);
       store.addCompletion(c).catch(console.error);
     }
+  };
+
+  /* Restart: push past-due chores out to fresh dates. No completions logged. */
+  const plan = today === effectiveToday() ? restartPlan(goals, comps, today) : [];
+  const restart = () => {
+    const byId = new Map(plan.map((p) => [p.id, p.deferredTo]));
+    const prev = goals.filter((g) => byId.has(g.id));
+    const next = goals.map((g) => (byId.has(g.id) ? { ...g, deferredTo: byId.get(g.id) } : g));
+    setGoals(next);
+    next.filter((g) => byId.has(g.id)).forEach((g) => store.updateGoal(g).catch(console.error));
+    setConfirming(false);
+    setUndo({ count: prev.length, prev });
+  };
+  const undoRestart = () => {
+    const prevById = new Map(undo.prev.map((g) => [g.id, g]));
+    setGoals(goals.map((g) => prevById.get(g.id) ?? g));
+    undo.prev.forEach((g) => store.updateGoal(g).catch(console.error));
+    setUndo(null);
   };
 
   const askClaude = async () => {
@@ -103,10 +129,24 @@ export default function Rhythm({ onSignOut }) {
       <header>
         <div className="masthead">
           <span className="mast-title"><span className="mast-dot" />Rhythm</span>
-          <button className="edit-btn" onClick={() => setEditing(!editing)}>
-            {editing ? "Done editing" : "Edit goals"}
-          </button>
+          <span className="mast-actions">
+            {plan.length > 0 && !confirming && (
+              <button className="edit-btn" onClick={() => setConfirming(true)}>
+                Restart
+              </button>
+            )}
+            <button className="edit-btn" onClick={() => setEditing(!editing)}>
+              {editing ? "Done editing" : "Edit goals"}
+            </button>
+          </span>
         </div>
+        {confirming && (
+          <div className="restart-confirm" role="alertdialog" aria-label="Confirm restart">
+            <span>Restart {plan.length} past-due {plan.length === 1 ? "item" : "items"}?</span>
+            <button className="edit-btn" onClick={restart}>Restart</button>
+            <button className="edit-btn" onClick={() => setConfirming(false)}>Cancel</button>
+          </div>
+        )}
         <h1>{prettyDate(today).split(",")[0]}</h1>
         <div className="date-row">
           <span className="date-sub">{prettyDate(today).split(", ").slice(1).join(", ")}</span>
@@ -179,6 +219,13 @@ export default function Rhythm({ onSignOut }) {
           );
         })}
       </section>
+
+      {undo && (
+        <div className="toast" role="status">
+          Restarted {undo.count} {undo.count === 1 ? "item" : "items"}
+          <button onClick={undoRestart}>Undo</button>
+        </div>
+      )}
 
       <footer>
         Goals + a completion log. Everything else is computed. ·{" "}
