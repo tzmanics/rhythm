@@ -43,6 +43,23 @@ header { padding-bottom: 20px; }
 }
 .edit-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
 .edit-btn:focus-visible { outline: 2px solid var(--turq); outline-offset: 2px; }
+.mast-actions { display: inline-flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.restart-confirm {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 14px; padding: 10px 12px; background: var(--paper);
+  border: 2px solid var(--ink); box-shadow: var(--shadow-sm); font-weight: 700; font-size: 14px;
+}
+.restart-confirm span { flex: 1 1 auto; }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 10;
+  display: flex; align-items: center; gap: 14px; padding: 10px 14px;
+  background: var(--ink); color: var(--paper); font-size: 14px; font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+.toast button {
+  background: transparent; border: 2px solid var(--paper); color: var(--paper);
+  font-weight: 700; padding: 3px 10px; cursor: pointer;
+}
 h1 {
   font-family: 'Bricolage Grotesque', system-ui, sans-serif;
   font-weight: 800; font-size: clamp(42px, 11vw, 64px);
